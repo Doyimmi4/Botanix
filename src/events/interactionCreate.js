@@ -31,18 +31,26 @@ module.exports = {
         await handleAutocomplete(interaction, client);
       }
     } catch (error) {
-      logger.error('Error in interactionCreate:', error);
+      logger.error('Error in interactionCreate:', { 
+        error: error.message,
+        code: error.code,
+        commandName: interaction.commandName || 'unknown'
+      });
       
-      const errorEmbed = EmbedUtils.error('An unexpected error occurred while processing your interaction.');
-      
-      try {
-        if (interaction.replied || interaction.deferred) {
-          await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
-        } else {
-          await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      // Only try to respond if interaction is still valid
+      if (error.code !== 10062 && error.code !== 40060) {
+        const errorEmbed = EmbedUtils.error('An unexpected error occurred while processing your interaction.');
+        
+        try {
+          if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+          } else if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+          }
+        } catch (replyError) {
+          // Silent fail for interaction errors
+          logger.debug('Failed to send error response:', { error: replyError.message });
         }
-      } catch (replyError) {
-        logger.error('Failed to send error response:', replyError);
       }
     }
   }
@@ -93,28 +101,39 @@ async function handleSlashCommand(interaction, client) {
 
   // Auto-defer if command takes time
   if (command.defer && !interaction.replied && !interaction.deferred) {
-    await interaction.deferReply({ ephemeral: command.ephemeral || false });
-  } else if (!command.defer && !interaction.replied && !interaction.deferred) {
-    // Ensure we respond within 3 seconds
-    setTimeout(() => {
-      if (!interaction.replied && !interaction.deferred) {
-        interaction.reply({ content: 'Processing...', ephemeral: true }).catch(() => {});
-      }
-    }, 2500);
+    try {
+      await interaction.deferReply({ ephemeral: command.ephemeral || false });
+    } catch (error) {
+      logger.debug('Failed to defer interaction:', { error: error.message });
+      return; // Skip execution if defer fails
+    }
   }
 
   // Execute command
   try {
     await command.execute(interaction, client);
   } catch (error) {
-    logger.error(`Command ${command.data.name} error:`, error);
+    logger.error(`Command ${command.data.name} error:`, { 
+      error: error.message,
+      code: error.code,
+      userId: interaction.user.id
+    });
+    
+    // Skip error response for expired interactions
+    if (error.code === 10062 || error.code === 40060) {
+      return;
+    }
     
     const errorEmbed = EmbedUtils.error('Command execution failed. Please try again.');
     
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({ embeds: [errorEmbed], ephemeral: true }).catch(() => {});
-    } else {
-      await interaction.reply({ embeds: [errorEmbed], ephemeral: true }).catch(() => {});
+    try {
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ embeds: [errorEmbed], ephemeral: true });
+      } else {
+        await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+      }
+    } catch (replyError) {
+      // Silent fail
     }
     return;
   }
