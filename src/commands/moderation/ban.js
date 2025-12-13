@@ -1,60 +1,119 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const embeds = require('../../utils/embeds');
-const logChannels = require('../../utils/logChannels');
-const cooldowns = require('../../utils/cooldowns');
+const EmbedUtils = require('../../utils/embeds');
+const PermissionUtils = require('../../utils/permissions');
+const CheckUtils = require('../../utils/checks');
+const logger = require('../../utils/logger');
+const config = require('../../config/permissions');
 
 module.exports = {
-  name: 'ban',
-  type: 'slash',
-  permissions: ['BanMembers'],
-  botPermissions: ['BanMembers'],
   data: new SlashCommandBuilder()
     .setName('ban')
-    .setDescription('Ban a user with reason and duration')
-    .addUserOption(o => o.setName('user').setDescription('User to ban').setRequired(true))
-    .addStringOption(o => o.setName('reason').setDescription('Reason'))
-    .addBooleanOption(o => o.setName('silent').setDescription('Do not announce'))
-    .addBooleanOption(o => o.setName('dm').setDescription('Send DM to user'))
-    .addStringOption(o => o.setName('duration').setDescription('Duration like 1d, 2h (omit for permanent)'))
+    .setDescription('Ban a member from the server 🔨')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('The user to ban')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('reason')
+        .setDescription('Reason for the ban')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('delete_days')
+        .setDescription('Days of messages to delete (0-7)')
+        .setMinValue(0)
+        .setMaxValue(7))
+    .addBooleanOption(option =>
+      option.setName('silent')
+        .setDescription('Don\'t send DM to user'))
     .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers),
-  async execute({ client, interaction }) {
-    const cd = cooldowns.check(`ban:${interaction.user.id}`);
-    if (cd) return interaction.reply({ ephemeral: true, content: `��� Slow down please. Try again in ${Math.ceil(cd/1000)}s.` });
-
-    const target = interaction.options.getUser('user', true);
-    const member = await interaction.guild.members.fetch(target.id).catch(() => null);
-    const reason = interaction.options.getString('reason') || 'No reason provided';
+  
+  permission: config.levels.MODERATOR,
+  botPermissions: [PermissionFlagsBits.BanMembers],
+  cooldown: 3000,
+  defer: true,
+  
+  async execute(interaction, client) {
+    const target = interaction.options.getUser('user');
+    const reason = CheckUtils.validateReason(interaction.options.getString('reason'));
+    const deleteDays = interaction.options.getInteger('delete_days') || 0;
     const silent = interaction.options.getBoolean('silent') || false;
-    const dm = interaction.options.getBoolean('dm') ?? true;
-    const durationStr = interaction.options.getString('duration');
-
-    if (!member) return interaction.reply({ ephemeral: true, content: 'User is not in the server.' });
-
-    // Duration parsing
-    let deleteMessageSeconds = 0; // could be option
-    let durationMs = null;
-    if (durationStr) {
-      try { durationMs = require('ms')(durationStr); } catch {}
+    
+    try {
+      // Get member if in guild
+      let targetMember = null;
+      try {
+        targetMember = await interaction.guild.members.fetch(target.id);
+      } catch (error) {
+        // User not in guild, can still ban by ID
+      }
+      
+      // Check if user can be moderated
+      if (targetMember) {
+        const canExecute = CheckUtils.canExecuteOn(interaction.member, targetMember);
+        if (!canExecute.success) {
+          return interaction.editReply({
+            embeds: [EmbedUtils.error(canExecute.reason)]
+          });
+        }
+      }
+      
+      // Check if already banned
+      try {
+        const banInfo = await interaction.guild.bans.fetch(target.id);
+        if (banInfo) {
+          return interaction.editReply({
+            embeds: [EmbedUtils.error('This user is already banned!')]
+          });
+        }
+      } catch (error) {
+        // User not banned, continue
+      }
+      
+      // Send DM before ban (if not silent and user is in guild)
+      if (!silent && targetMember) {
+        try {
+          const dmEmbed = EmbedUtils.moderation('Ban', interaction.user, target, reason)
+            .setTitle('🔨 You have been banned')
+            .addFields({ name: 'Server', value: interaction.guild.name, inline: true });
+          
+          await target.send({ embeds: [dmEmbed] });
+        } catch (error) {
+          // DM failed, continue with ban
+        }
+      }
+      
+      // Execute ban
+      await interaction.guild.members.ban(target.id, {
+        reason: `${reason} | Moderator: ${interaction.user.tag}`,
+        deleteMessageDays: deleteDays
+      });
+      
+      // Generate case ID
+      const caseId = Date.now().toString().slice(-6);
+      
+      // Success embed
+      const successEmbed = EmbedUtils.moderation('Ban', interaction.user, target, reason, caseId)
+        .addFields({ name: 'Messages Deleted', value: `${deleteDays} day(s)`, inline: true });
+      
+      await interaction.editReply({ embeds: [successEmbed] });
+      
+      // Update stats
+      client.incrementStat('moderationActions');
+      
+      // Log action
+      logger.moderation(`${interaction.user.tag} banned ${target.tag}`, {
+        moderator: interaction.user.id,
+        target: target.id,
+        reason,
+        caseId,
+        guild: interaction.guild.id
+      });
+      
+    } catch (error) {
+      logger.error('Ban command error:', error);
+      await interaction.editReply({
+        embeds: [EmbedUtils.error('Failed to ban user. Please check my permissions and try again.')]
+      });
     }
-
-    if (dm) {
-      member.send({ embeds: [embeds.info('You were banned', `Server: **${interaction.guild.name}**\nReason: ${reason}`)] }).catch(() => {});
-    }
-
-    await interaction.deferReply({ ephemeral: true });
-
-    await member.ban({ deleteMessageSeconds, reason }).catch(err => interaction.editReply({ content: 'Failed to ban user: ' + (err?.message || 'Unknown') }));
-
-    if (durationMs) {
-      setTimeout(async () => {
-        await interaction.guild.members.unban(member.id, 'Tempban expired').catch(() => {});
-      }, Math.min(durationMs, 24 * 3600 * 1000)); // safety cap to 24h timer process
-    }
-
-    const embed = embeds.success('User banned', `Target: <@${member.id}>\nReason: ${reason}`);
-    const logCh = await logChannels.fetch(interaction.guild, 'ban-logs');
-    logCh?.send({ embeds: [embed] }).catch(() => {});
-
-    await interaction.editReply({ embeds: [embed], content: silent ? undefined : 'User has been banned.' });
   }
 };

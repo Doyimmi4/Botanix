@@ -1,25 +1,53 @@
 {
   "name": "botanix",
   "version": "1.0.0",
-  "description": "Botanix - a cozy yet powerful moderation-only Discord bot",
+  "description": "A cute, cozy femboy aesthetic Discord moderation bot with enterprise-grade architecture",
   "main": "src/index.js",
-  "private": true,
-  "engines": {
-    "node": ">=18.17.0"
-  },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "NODE_ENV=development node src/index.js",
-    "register:guild": "REGISTER_GUILD=$REGISTER_GUILD node src/index.js"
+    "dev": "NODE_ENV=development node --inspect src/index.js",
+    "deploy": "node src/utils/deploy.js",
+    "logs": "tail -f logs/botanix.log",
+    "clean": "rm -rf logs/* && rm -rf node_modules/.cache",
+    "setup": "node src/utils/setup.js",
+
+    "monitor": "node src/utils/monitor.js",
+    "backup": "node src/utils/backup.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": ["discord", "bot", "moderation", "botanix"],
+  "author": "Botanix Team",
+  "license": "MIT",
   "dependencies": {
-    "chalk": "^5.3.0",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "chalk": "^4.1.2",
+    "pino": "^8.16.2",
+    "pino-pretty": "^10.2.3",
     "dayjs": "^1.11.10",
-    "discord.js": "^14.16.3",
-    "dotenv": "^16.4.5",
-    "glob": "^11.0.0",
+    "glob": "^10.3.10",
     "ms": "^2.1.3",
-    "pino": "^9.3.2",
-    "pino-pretty": "^11.2.2"
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.2",
+    "lodash": "^4.17.21",
+    "moment": "^2.29.4",
+    "uuid": "^9.0.1",
+    "validator": "^13.11.0",
+
+    "rate-limiter-flexible": "^4.0.1",
+    "node-cache": "^5.1.2",
+    "figlet": "^1.7.0",
+    "gradient-string": "^2.0.2",
+    "cli-progress": "^3.12.0",
+    "boxen": "^5.1.2",
+    "ora": "^5.4.1",
+    "inquirer": "^8.2.6",
+    "table": "^6.8.1",
+    "humanize-duration": "^3.29.0",
+    "pretty-bytes": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=16.11.0",
+    "npm": ">=8.0.0"
   }
 }

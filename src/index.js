@@ -1,27 +1,56 @@
 require('dotenv').config();
-const { ShardingManager } = require('discord.js');
-const path = require('path');
+const BotanixClient = require('./client');
 const logger = require('./utils/logger');
-const { BOT_NAME } = require('./config/bot');
+const PresenceManager = require('./utils/presence');
 
-const token = process.env.BOT_TOKEN;
-if (!token) {
-  logger.fatal('❌ BOT_TOKEN is missing in environment. Exiting.');
+// Environment validation
+const requiredEnvVars = ['DISCORD_TOKEN', 'CLIENT_ID'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  logger.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  logger.error('Please set these variables in your hosting platform environment settings.');
   process.exit(1);
 }
 
-const manager = new ShardingManager(path.join(__dirname, 'client.js'), {
-  token,
-  respawn: true,
-  totalShards: 'auto',
-  mode: 'process'
+// ShardCloud compatibility
+if (process.env.NODE_ENV === 'production') {
+  logger.info('Running in production mode for ShardCloud');
+}
+
+// Create client instance
+const client = new BotanixClient();
+
+// Initialize presence manager
+client.presenceManager = new PresenceManager(client);
+
+// Global error handlers
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
 });
 
-manager.on('shardCreate', shard => {
-  logger.info({ shard: shard.id }, `🌸 ${BOT_NAME} shard ${shard.id} launched`);
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-manager.spawn().catch((err) => {
-  logger.fatal({ err }, 'Failed to spawn shards');
+// Graceful shutdown for ShardCloud
+const shutdown = (signal) => {
+  logger.system(`Received ${signal}, shutting down gracefully...`);
+  if (client.presenceManager) {
+    client.presenceManager.stop();
+  }
+  client.destroy();
+  setTimeout(() => process.exit(0), 5000); // Force exit after 5s
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGHUP', () => shutdown('SIGHUP'));
+
+// Start the bot
+logger.startup();
+client.start().catch(error => {
+  logger.error('Failed to start client:', error);
   process.exit(1);
 });

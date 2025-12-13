@@ -1,0 +1,50 @@
+# ShardCloud Configuration for Botanix
+name: botanix
+description: "🌸 Botanix - Cute Moderation Bot with Enterprise Architecture"
+
+# Runtime Configuration
+runtime:
+  type: nodejs
+  version: "18"
+  
+# Resource Limits (Free Tier)
+resources:
+  memory: 512MB
+  cpu: 0.5
+  
+# Environment Variables (Set in ShardCloud Dashboard)
+environment:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  MAINTENANCE_MODE: false
+  CACHE_TTL: 300000
+  MAX_CACHE_SIZE: 1000
+  
+# Health Check
+health:
+  path: /health
+  port: 3000
+  
+# Auto-scaling (Free tier: 1 instance)
+scaling:
+  min: 1
+  max: 1
+  
+# Build Configuration
+build:
+  commands:
+    - npm ci --only=production
+    - npm run deploy
+    
+# Start Command
+start: node src/index.js
+
+# Files to ignore during deployment
+ignore:
+  - .git
+  - .env
+  - .env.example
+  - logs/
+  - node_modules/
+  - backups/
+  - *.log
