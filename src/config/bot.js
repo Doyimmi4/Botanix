@@ -48,5 +48,10 @@ module.exports = {
     error: 0xFFB6C1,      // Light Pink (soft error)
     info: 0xE6E6FA,       // Lavender
     moderation: 0xDDA0DD  // Plum
+  },
+  maintenance: {
+    enabled: process.env.MAINTENANCE_MODE === 'true',
+    message: process.env.MAINTENANCE_MESSAGE || 'Botanix is currently under maintenance. Please try again later! 🌸',
+    sendMessage: process.env.MAINTENANCE_SEND_MESSAGE !== 'false'
   }
 };

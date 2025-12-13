@@ -1,7 +1,9 @@
 const { SlashCommandBuilder } = require('discord.js');
 const EmbedUtils = require('../../utils/embeds');
-const PermissionUtils = require('../../utils/permissions');
 const config = require('../../config/permissions');
+const botConfig = require('../../config/bot');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -13,7 +15,11 @@ module.exports = {
         .setRequired(true))
     .addStringOption(option =>
       option.setName('message')
-        .setDescription('Custom maintenance message')),
+        .setDescription('Custom maintenance message'))
+    .addBooleanOption(option =>
+      option.setName('send_message')
+        .setDescription('Send message to users when commands are used during maintenance')
+        .setRequired(false)),
   
   permission: config.levels.OWNER,
   cooldown: 0,
@@ -23,12 +29,31 @@ module.exports = {
   async execute(interaction, client) {
     const enabled = interaction.options.getBoolean('enabled');
     const message = interaction.options.getString('message');
+    const sendMessage = interaction.options.getBoolean('send_message');
     
-    // Set maintenance mode
-    client.setMaintenanceMode(enabled, message);
+    // Update .env file
+    const envPath = path.join(process.cwd(), '.env');
+    let envContent = fs.readFileSync(envPath, 'utf8');
+    
+    envContent = envContent.replace(/MAINTENANCE_MODE=.*/g, `MAINTENANCE_MODE=${enabled}`);
+    if (message) {
+      envContent = envContent.replace(/MAINTENANCE_MESSAGE=.*/g, `MAINTENANCE_MESSAGE=${message}`);
+    }
+    if (sendMessage !== null) {
+      envContent = envContent.replace(/MAINTENANCE_SEND_MESSAGE=.*/g, `MAINTENANCE_SEND_MESSAGE=${sendMessage}`);
+    }
+    
+    fs.writeFileSync(envPath, envContent);
+    
+    // Update runtime config
+    botConfig.maintenance.enabled = enabled;
+    if (message) botConfig.maintenance.message = message;
+    if (sendMessage !== null) botConfig.maintenance.sendMessage = sendMessage;
     
     const embed = EmbedUtils.success(
-      `Maintenance mode ${enabled ? 'enabled' : 'disabled'}${message ? `\nMessage: ${message}` : ''}`,
+      `Maintenance mode ${enabled ? 'enabled' : 'disabled'}` +
+      `${message ? `\nMessage: ${message}` : ''}` +
+      `${sendMessage !== null ? `\nSend messages: ${sendMessage}` : ''}`,
       '🔧 Maintenance Mode'
     );
     

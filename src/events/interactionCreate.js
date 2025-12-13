@@ -3,17 +3,21 @@ const PermissionUtils = require('../utils/permissions');
 const EmbedUtils = require('../utils/embeds');
 const cooldowns = require('../utils/cooldowns');
 const constants = require('../utils/constants');
+const config = require('../config/bot');
 
 module.exports = {
   name: 'interactionCreate',
   async execute(interaction, client) {
     try {
       // Check if bot is in maintenance mode
-      if (client.maintenanceMode && PermissionUtils.getPermissionLevel(interaction.member) < 4) {
-        return interaction.reply({
-          embeds: [EmbedUtils.maintenance(client.maintenanceMessage)],
-          ephemeral: true
-        });
+      if (config.maintenance.enabled && PermissionUtils.getPermissionLevel(interaction.member) < 4) {
+        if (config.maintenance.sendMessage) {
+          return interaction.reply({
+            embeds: [EmbedUtils.maintenance(config.maintenance.message)],
+            ephemeral: true
+          });
+        }
+        return; // Silent ignore if sendMessage is false
       }
 
       // Handle slash commands
